@@ -15,16 +15,9 @@ class Config:
     DEBUG = False
     TESTING = False
     
-    # Camera Configuration
-    CAMERA_INDEX = 0
-    CAMERA_WIDTH = 640
-    CAMERA_HEIGHT = 480
-    CAMERA_FPS = 30
-    
     # Model Configuration
     MODEL_PATH = os.path.join('models', 'trained')
     CNN_MODEL_PATH = os.path.join(MODEL_PATH, 'cnn_model.h5')
-    LSTM_MODEL_PATH = os.path.join(MODEL_PATH, 'lstm_model.h5')
     
     # Gesture Recognition Settings
     CONFIDENCE_THRESHOLD = 0.6
@@ -58,37 +51,44 @@ class Config:
     LOG_FILE = 'logs/performance.log'
     FPS_LOG_INTERVAL = 30  # Log FPS every 30 seconds
     
-    # Gesture Classes
+    # Gesture Classes (81 target classes — alphabetical order)
+    # NOTE: The trained CNN model currently recognizes 61 of these 81 classes.
+    # Missing from trained model: BROTHER, FAMILY, FATHER, FOOD, FRIEND, GOODBYE,
+    # HAPPY, HOUSE, MONEY, MORNING, MOTHER, NIGHT, PLEASE, SAD, SISTER, SORRY,
+    # TEACHER, THANKYOU, TIME, WATER.
+    # The model loads its actual labels from cnn_model_labels.pkl independently.
+    # To add support for all 81, collect data and retrain via /collect page.
     GESTURE_CLASSES = [
-        # Alphabets
-        'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-        'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-        'U', 'V', 'W', 'X', 'Y', 'Z',
-        # Numbers
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-        # Special symbols
-        '+'
+        "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+        "A", "AFRAID", "AGREE", "ASSISTANCE", "B", "BAD", "BECOME",
+        "BROTHER", "C", "COLLEGE", "D", "DOCTOR", "E", "F", "FAMILY",
+        "FATHER", "FOOD", "FRIEND", "FROM", "G", "GOODBYE", "H",
+        "HAPPY", "HELLO", "HOUSE", "I", "J", "K", "L", "LOVE", "M",
+        "MONEY", "MORNING", "MOTHER", "N", "NIGHT", "NO", "O", "P",
+        "PAIN", "PLEASE", "PRAY", "Q", "R", "S", "SAD", "SECONDARY",
+        "SISTER", "SKIN", "SMALL", "SORRY", "SPACE", "SPECIFIC",
+        "STAND", "T", "TEACHER", "THANKYOU", "TIME", "TODAY", "U", "V",
+        "W", "WARN", "WATER", "WHICH", "WORK", "X", "Y", "YES",
+        "YOU", "Z"
     ]
     
-    NUM_CLASSES = len(GESTURE_CLASSES)
+    NUM_CLASSES = len(GESTURE_CLASSES)  # 81 target classes
 
 class DevelopmentConfig(Config):
     """Development configuration"""
     DEBUG = True
-    CAMERA_FPS = 30
     LOG_PERFORMANCE = True
 
 class ProductionConfig(Config):
     """Production configuration"""
     DEBUG = False
-    CAMERA_FPS = 60
     CONFIDENCE_THRESHOLD = 0.8
     LOG_PERFORMANCE = True
 
 class TestingConfig(Config):
     """Testing configuration"""
     TESTING = True
-    CAMERA_INDEX = -1  # Disable camera for testing
+    CONFIDENCE_THRESHOLD = 0.3  # Lower threshold for testing
     DEBUG = True
 
 # Configuration mapping

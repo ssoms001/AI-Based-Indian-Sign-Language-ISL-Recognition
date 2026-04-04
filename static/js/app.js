@@ -5,7 +5,6 @@
 class ISLGestureApp {
     constructor() {
         this.currentSentence = '';
-        this.currentHindiTranslation = '';
         this.currentGesture = '';
         this.currentConfidence = 0.0;
         this.handCount = 0;
@@ -14,6 +13,13 @@ class ISLGestureApp {
         this.fpsCounter = 0;
         this.performanceData = {};
         this.gestureThumbnails = [];
+
+        // Client-side metrics tracking
+        this._predictionCount = 0;
+        this._predictionStartTime = performance.now();
+        this._lastLatency = 0;
+        this._totalCorrectPredictions = 0;
+        this._totalPredictions = 0;
 
         // Initialize the application
         this.init();
@@ -24,16 +30,19 @@ class ISLGestureApp {
      */
     init() {
         console.log('🚀 Initializing ISL Gesture Recognition System...');
-        
+
         // Bind event listeners
         this.bindEventListeners();
-        
-        // Start real-time data updates
-        this.startDataUpdates();
-        
+
+        // Initialize client-side camera
+        this.initCamera();
+
+        // Update performance metrics periodically
+        setInterval(() => this.updatePerformanceMetrics(), 1000);
+
         // Initialize UI components
         this.initializeUI();
-        
+
         console.log('✅ Application initialized successfully');
     }
 
@@ -46,21 +55,14 @@ class ISLGestureApp {
             this.speakText();
         });
 
-        // Translate button (removed since translation is now automatic)
-
         // Clear button
         document.getElementById('clear-btn').addEventListener('click', () => {
             this.clearSentence();
         });
 
-        // Video stream error handling
-        const videoStream = document.getElementById('video-stream');
-        videoStream.addEventListener('error', () => {
-            this.handleVideoError();
-        });
-
-        videoStream.addEventListener('load', () => {
-            this.handleVideoLoad();
+        // Backspace button
+        document.getElementById('backspace-btn')?.addEventListener('click', () => {
+            this.backspaceLastCharacter();
         });
 
         // Keyboard shortcuts
@@ -70,23 +72,74 @@ class ISLGestureApp {
     }
 
     /**
-     * Start real-time data updates
+     * Initialize client-side camera via SignBridgeCamera
      */
-    startDataUpdates() {
-        // Update gesture data every 100ms
-        setInterval(() => {
-            this.updateGestureData();
-        }, 100);
+    async initCamera() {
+        if (typeof SignBridgeCamera === 'undefined') {
+            console.error('camera.js not loaded');
+            return;
+        }
 
-        // Update performance metrics every 1 second
-        setInterval(() => {
-            this.updatePerformanceMetrics();
-        }, 1000);
+        this.camera = new SignBridgeCamera('#video-stream', {
+            fps: 3,
+            buildSentence: true,
+            onPrediction: (data) => this.handlePrediction(data),
+            onCameraReady: () => {
+                const status = document.getElementById('camera-status');
+                if (status) status.innerHTML = '<i class="fas fa-circle text-success" style="font-size:0.6em;"></i> Camera Active';
+            },
+            onError: (e) => {
+                const status = document.getElementById('camera-status');
+                if (status) status.innerHTML = '<i class="fas fa-circle text-danger" style="font-size:0.6em;"></i> Camera Error';
+                console.error('Camera error:', e);
+            }
+        });
 
-        // Update FPS counter every 500ms
-        setInterval(() => {
-            this.updateFPSCounter();
-        }, 500);
+        // Build multi-camera dropdown
+        await this.camera.buildCameraSelector('#camera-selector');
+
+        // Start camera and prediction
+        const started = await this.camera.start();
+        if (started) {
+            this.camera.startPredicting();
+        }
+    }
+
+    /**
+     * Handle prediction results from camera
+     */
+    handlePrediction(data) {
+        if (!data || data.error) return;
+
+        // Track client-side metrics
+        this._predictionCount++;
+        this._totalPredictions++;
+        if (data.confidence && data.confidence > 0.6) this._totalCorrectPredictions++;
+        if (data._latency) this._lastLatency = data._latency;
+
+        // Update gesture display
+        if (data.gesture && data.gesture !== this.currentGesture) {
+            this.currentGesture = data.gesture;
+            this.updateCurrentCharacter(data.gesture);
+        }
+
+        // Update confidence
+        if (data.confidence !== undefined && data.confidence !== this.currentConfidence) {
+            this.currentConfidence = data.confidence;
+            this.updateConfidence(data.confidence);
+        }
+
+        // Update hand count
+        if (data.hand_count !== undefined && data.hand_count !== this.handCount) {
+            this.handCount = data.hand_count;
+        }
+
+        // Update sentence if server built one
+        if (data.sentence !== undefined && data.sentence !== this.currentSentence) {
+            this.currentSentence = data.sentence;
+            this.updateSentenceDisplay(data.sentence);
+            this.updateWordSuggestions(data.sentence);
+        }
     }
 
     /**
@@ -95,7 +148,7 @@ class ISLGestureApp {
     initializeUI() {
         // Add loading states
         this.showLoadingState('Initializing camera...');
-        
+
         // Hide loading after 3 seconds
         setTimeout(() => {
             this.hideLoadingState();
@@ -103,7 +156,7 @@ class ISLGestureApp {
 
         // Initialize tooltips
         this.initializeTooltips();
-        
+
         // Initialize gesture learning panel
         this.initializeGestureLearningPanel();
     }
@@ -161,21 +214,27 @@ class ISLGestureApp {
     }
 
     /**
-     * Update performance metrics
+     * Update performance metrics (client-side computed)
      */
-    async updatePerformanceMetrics() {
-        try {
-            const response = await fetch('/api/performance');
-            const data = await response.json();
+    updatePerformanceMetrics() {
+        const now = performance.now();
+        const elapsed = (now - this._predictionStartTime) / 1000;
+        const fps = elapsed > 0 ? Math.round(this._predictionCount / elapsed) : 0;
+        const accuracy = this._totalPredictions > 0
+            ? this._totalCorrectPredictions / this._totalPredictions : 0;
+        const latency = this._lastLatency || 0;
 
-            if (!data.error) {
-                this.performanceData = data;
-                this.displayPerformanceMetrics(data);
-            }
-
-        } catch (error) {
-            console.error('Error updating performance metrics:', error);
+        // Reset FPS counter every 3 seconds
+        if (elapsed > 3) {
+            this._predictionCount = 0;
+            this._predictionStartTime = now;
         }
+
+        this.displayPerformanceMetrics({
+            avg_fps: fps,
+            accuracy: accuracy,
+            latency: latency
+        });
     }
 
     /**
@@ -212,54 +271,9 @@ class ISLGestureApp {
         } else {
             this.updateCurrentCharacter('--');
         }
-
-        // Update Hindi translation automatically when sentence changes
-        if (sentence && sentence.trim()) {
-            this.updateHindiTranslation(sentence);
-        } else {
-            this.updateHindiDisplay('');
-        }
     }
 
-    /**
-     * Update Hindi display
-     */
-    updateHindiDisplay(hindiText) {
-        const hindiDisplay = document.getElementById('hindi-display');
-        hindiDisplay.value = hindiText || '';
-    }
 
-    /**
-     * Update Hindi translation automatically
-     */
-    async updateHindiTranslation(englishText) {
-        try {
-            const response = await fetch('/api/translate', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    text: englishText
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.success && result.translated) {
-                this.currentHindiTranslation = result.translated;
-                this.updateHindiDisplay(result.translated);
-                console.log('Hindi translation updated:', result.translated);
-            } else {
-                console.warn('Translation failed:', result.error);
-                this.updateHindiDisplay('Translation unavailable');
-            }
-
-        } catch (error) {
-            console.error('Error updating Hindi translation:', error);
-            this.updateHindiDisplay('Translation error');
-        }
-    }
 
     /**
      * Update current character display
@@ -268,12 +282,12 @@ class ISLGestureApp {
         const element = document.getElementById('current-character');
         element.textContent = character;
         element.classList.add('pulse');
-        
+
         setTimeout(() => {
             element.classList.remove('pulse');
         }, 500);
     }
-    
+
     /**
      * Update hand count display
      */
@@ -288,16 +302,16 @@ class ISLGestureApp {
     updateConfidence(confidence) {
         const confidenceBar = document.getElementById('confidence-bar');
         const confidenceText = document.getElementById('confidence-text');
-        
+
         const percentage = Math.round(confidence * 100);
         confidenceBar.style.width = percentage + '%';
         confidenceText.textContent = percentage + '%';
-        
+
         // Change color based on confidence level
-        confidenceBar.className = 'progress-bar ' + 
-            (percentage >= 80 ? 'bg-success' : 
-             percentage >= 60 ? 'bg-warning' : 'bg-danger');
-        
+        confidenceBar.className = 'progress-bar ' +
+            (percentage >= 80 ? 'bg-success' :
+                percentage >= 60 ? 'bg-warning' : 'bg-danger');
+
         // Add animation for high confidence
         if (percentage >= 80) {
             confidenceBar.classList.add('pulse');
@@ -360,9 +374,9 @@ class ISLGestureApp {
             words.push(word);
         }
         const newSentence = words.join(' ') + ' ';
-        
+
         this.updateSentenceDisplay(newSentence);
-        
+
         // Send to backend
         this.sendSentenceUpdate(newSentence);
     }
@@ -376,7 +390,7 @@ class ISLGestureApp {
         if (data.avg_fps !== undefined) {
             const fpsValue = Math.round(data.avg_fps);
             avgFpsElement.textContent = fpsValue;
-            avgFpsElement.className = 'metric-value ' + 
+            avgFpsElement.className = 'metric-value ' +
                 (fpsValue > 25 ? 'good' : fpsValue > 15 ? 'warning' : 'danger');
         }
 
@@ -385,7 +399,7 @@ class ISLGestureApp {
         if (data.accuracy !== undefined) {
             const accValue = Math.round(data.accuracy * 100);
             accuracyElement.textContent = accValue + '%';
-            accuracyElement.className = 'metric-value ' + 
+            accuracyElement.className = 'metric-value ' +
                 (accValue >= 80 ? 'good' : accValue >= 60 ? 'warning' : 'danger');
         }
 
@@ -394,7 +408,7 @@ class ISLGestureApp {
         if (data.latency !== undefined) {
             const latValue = Math.round(data.latency);
             latencyElement.textContent = latValue + 'ms';
-            latencyElement.className = 'metric-value ' + 
+            latencyElement.className = 'metric-value ' +
                 (latValue < 100 ? 'good' : latValue < 200 ? 'warning' : 'danger');
         }
     }
@@ -468,9 +482,7 @@ class ISLGestureApp {
 
             if (result.success) {
                 this.currentSentence = '';
-                this.currentHindiTranslation = '';
                 this.updateSentenceDisplay('');
-                this.updateHindiDisplay('');
                 this.updateCurrentCharacter('--');
                 this.updateConfidence(0);
                 this.updateWordSuggestions('');
@@ -578,14 +590,14 @@ class ISLGestureApp {
             return;
         }
 
-        // Remove the last character
-        const newSentence = this.currentSentence.slice(0, -1);
+        // Remove the last character and update local state
+        this.currentSentence = this.currentSentence.slice(0, -1);
 
         // Update the display
-        this.updateSentenceDisplay(newSentence);
+        this.updateSentenceDisplay(this.currentSentence);
 
         // Send to backend
-        await this.sendSentenceUpdate(newSentence);
+        await this.sendSentenceUpdate(this.currentSentence);
 
         console.log('Backspace: Removed last character');
     }
@@ -620,37 +632,51 @@ class ISLGestureApp {
             return null;
         }
     }
-    
+
     /**
-     * Initialize gesture learning panel
+     * Initialize gesture learning panel (works with new horizontal scroll layout)
      */
     initializeGestureLearningPanel() {
         console.log('🎓 Initializing gesture learning panel...');
-        
-        // Create gesture thumbnails for letters A-Z
-        const alphabetContainer = document.querySelector('.alphabet-thumbnails .thumbnail-grid');
-        const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-        
-        letters.forEach(letter => {
-            const thumbnail = this.createGestureThumbnail(letter, 'letter');
-            alphabetContainer.appendChild(thumbnail);
-        });
-        
-        // Create gesture thumbnails for numbers 0-9
-        const numberContainer = document.querySelector('.number-thumbnails .thumbnail-grid');
-        const numbers = '0123456789'.split('');
-        
-        numbers.forEach(number => {
-            const thumbnail = this.createGestureThumbnail(number, 'number');
-            numberContainer.appendChild(thumbnail);
-        });
-        
+
+        // Letters and numbers are now rendered inline via <script> in index.html
+        // Only need to populate common words here
+        const wordScroll = document.getElementById('word-scroll');
+        const wordGrid = document.getElementById('word-thumbnail-grid');
+        const wordContainer = wordScroll || wordGrid;
+        if (wordContainer) {
+            const words = [
+                'HELLO', 'YES', 'NO', 'LOVE', 'SPACE', 'GOODBYE', 'THANKYOU',
+                'PLEASE', 'SORRY', 'HAPPY', 'SAD', 'MOTHER', 'FATHER',
+                'BROTHER', 'SISTER', 'FRIEND', 'FAMILY', 'TEACHER',
+                'FOOD', 'WATER', 'HOUSE', 'MONEY', 'TIME', 'MORNING', 'NIGHT',
+                'DOCTOR', 'COLLEGE', 'AFRAID', 'AGREE', 'ASSISTANCE', 'BAD',
+                'BECOME', 'FROM', 'PAIN', 'PRAY', 'SECONDARY', 'SKIN',
+                'SMALL', 'SPECIFIC', 'STAND', 'TODAY', 'WARN', 'WHICH',
+                'WORK', 'YOU'
+            ];
+            // Clear any existing content
+            wordContainer.innerHTML = '';
+            // Use gesture-scroll-row style
+            if (wordScroll) wordScroll.classList.add('gesture-scroll-row');
+            words.forEach(word => {
+                const card = document.createElement('div');
+                card.className = 'gesture-card';
+                card.style.width = 'auto';
+                card.style.minWidth = '64px';
+                card.title = word;
+                card.onclick = () => { if (typeof showGestureRef === 'function') showGestureRef(word); };
+                card.innerHTML = `<img src="/static/gestures/${word}.png" alt="${word}" onerror="this.style.display='none'"><span style="font-size:0.7em">${word}</span>`;
+                wordContainer.appendChild(card);
+            });
+        }
+
         // Set initial gesture image to 'A'
         this.updateGestureImage('A');
-        
+
         console.log('✅ Gesture learning panel initialized');
     }
-    
+
     /**
      * Create a gesture thumbnail element
      */
@@ -660,67 +686,94 @@ class ISLGestureApp {
         thumbnail.textContent = character;
         thumbnail.dataset.gesture = character;
         thumbnail.dataset.type = type;
-        
+
         // Add click handler to show gesture image
         thumbnail.addEventListener('click', () => {
             this.showGestureInLearningPanel(character);
             this.highlightActiveThumbnail(thumbnail);
         });
-        
+
         return thumbnail;
     }
-    
+
     /**
      * Update gesture image in learning panel
      */
     updateGestureImage(gesture) {
         if (!gesture) return;
-        
+
         const gestureImage = document.getElementById('gesture-image');
         const gestureTitle = document.getElementById('gesture-title');
         const gestureDescription = document.getElementById('gesture-description');
-        
+
         // Update image source
         const imagePath = `/static/gestures/${gesture.toUpperCase()}.png`;
         gestureImage.src = imagePath;
         gestureImage.alt = `Gesture for ${gesture}`;
-        
+
         // Add animation class
         gestureImage.classList.add('gesture-image-update');
         setTimeout(() => {
             gestureImage.classList.remove('gesture-image-update');
         }, 500);
-        
+
         // Update title and description
         const isLetter = /^[A-Z]$/.test(gesture);
         const isNumber = /^[0-9]$/.test(gesture);
-        
+
+        // Word gesture descriptions
+        const wordDescriptions = {
+            'HELLO': 'Wave your open palm — the universal greeting sign',
+            'YES': 'Make a fist and nod it up and down like nodding',
+            'NO': 'Extend index and middle finger, close them together',
+            'GOOD': 'Give a thumbs up gesture',
+            'BAD': 'Give a thumbs down gesture',
+            'HELP': 'Place a fist on an open palm, lift upward',
+            'THANKYOU': 'Touch chin with flat hand, move forward',
+            'SORRY': 'Place fist on chest, move in circular motion',
+            'PLEASE': 'Press both palms together (prayer position)',
+            'STOP': 'Show flat palm facing forward (halt)',
+            'LOVE': 'Cross arms over your chest',
+            'FRIEND': 'Interlock index fingers together',
+            'WATER': 'Tap three fingers on chin',
+            'FOOD': 'Bring fingertips to mouth repeatedly',
+            'HOME': 'Place flat hand on cheek',
+            'SCHOOL': 'Clap hands twice (like a teacher)',
+            'DOCTOR': 'Tap wrist with two fingers (checking pulse)',
+            'COME': 'Palm up, curl fingers inward toward you',
+            'GO': 'Point forward and flick your wrist',
+            'EAT': 'Bring fingertips to mouth repeatedly'
+        };
+
         if (isLetter) {
             gestureTitle.textContent = `Letter: ${gesture}`;
             gestureDescription.textContent = `Practice the hand sign for the letter "${gesture}"`;
         } else if (isNumber) {
             gestureTitle.textContent = `Number: ${gesture}`;
             gestureDescription.textContent = `Practice the hand sign for the number "${gesture}"`;
+        } else if (wordDescriptions[gesture.toUpperCase()]) {
+            gestureTitle.textContent = `Word: ${gesture}`;
+            gestureDescription.textContent = wordDescriptions[gesture.toUpperCase()];
         } else {
             gestureTitle.textContent = `Gesture: ${gesture}`;
             gestureDescription.textContent = `Practice this gesture sign`;
         }
-        
+
         // Update active thumbnail
         this.updateActiveThumbnail(gesture);
     }
-    
+
     /**
      * Show specific gesture in learning panel (when thumbnail clicked)
      */
     showGestureInLearningPanel(gesture) {
         this.updateGestureImage(gesture);
-        
+
         // Scroll learning panel into view if needed
         const learningPanel = document.querySelector('.gesture-learning-container');
         learningPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
-    
+
     /**
      * Highlight active thumbnail
      */
@@ -729,17 +782,17 @@ class ISLGestureApp {
         document.querySelectorAll('.gesture-thumbnail').forEach(thumb => {
             thumb.classList.remove('active');
         });
-        
+
         // Add active class to clicked thumbnail
         activeThumbnail.classList.add('active');
     }
-    
+
     /**
      * Update active thumbnail based on current gesture
      */
     updateActiveThumbnail(gesture) {
         if (!gesture) return;
-        
+
         // Find and highlight the thumbnail for current gesture
         const thumbnail = document.querySelector(`[data-gesture="${gesture.toUpperCase()}"]`);
         if (thumbnail) {
@@ -751,7 +804,7 @@ class ISLGestureApp {
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     window.islApp = new ISLGestureApp();
-    
+
     // Perform initial health check
     window.islApp.checkHealth().then(health => {
         if (health && health.status === 'healthy') {

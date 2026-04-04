@@ -3,7 +3,16 @@ Data Preprocessing Module for ISL Gesture Recognition
 Processes raw gesture data and prepares it for model training
 """
 import os
+import sys
 import cv2
+
+# Fix Windows console encoding for emoji characters
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import numpy as np
 import pandas as pd
 import mediapipe as mp

@@ -28,7 +28,6 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
-*.manifest
 *.spec
 
 # Installer logs
@@ -56,8 +55,6 @@ coverage.xml
 # Django stuff:
 *.log
 local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -132,29 +129,40 @@ dmypy.json
 .DS_Store
 Thumbs.db
 
-# Model files (large files)
-*.h5
-*.pkl
-*.joblib
-*.model
-models/trained/*.h5
-models/trained/*.pb
-models/checkpoints/
+# ============================================
+# PROJECT-SPECIFIC EXCLUSIONS
+# ============================================
 
-# Data files
-data/raw/*
-data/processed/*
+# Model checkpoints (keep trained models, exclude checkpoints)
+models/checkpoints/
+models/plots/
+
+# Data files — too large for GitHub (1.5GB raw + 910MB processed)
+data/raw/
+data/processed/*.csv
+data/sequences/
+datasets/
+
+# Keep .gitkeep and metadata files
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/processed/metadata.json
 
 # Temporary files
 *.tmp
 *.temp
 temp/
 
-# Camera captures and generated images
+# Camera captures
 captures/
-*.jpg
-*.png
-*.jpeg
 static/images/captures/
+static/uploads/*.jpg
+static/uploads/*.png
+
+# Thesis / extra docs
+mca_thesis*.md
+Add on things/
+
+# Merge/utility scripts (not part of core app)
+merge_datasets.py
+generate_word_data.py

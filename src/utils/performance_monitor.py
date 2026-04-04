@@ -2,6 +2,13 @@
 Performance Monitoring Module for ISL Gesture Recognition System
 Tracks system performance metrics including FPS, accuracy, and latency
 """
+import sys
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import time
 import psutil
 from typing import Dict, List, Optional

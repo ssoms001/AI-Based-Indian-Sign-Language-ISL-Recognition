@@ -2,6 +2,13 @@
 Gesture Recognition Module for ISL System
 Uses MediaPipe for hand tracking and deep learning models for classification
 """
+import sys
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import cv2
 import numpy as np
 import mediapipe as mp
@@ -11,6 +18,8 @@ from tensorflow import keras
 import pickle
 import os
 import time
+import json
+from collections import deque
 
 class GestureRecognizer:
     """Main class for ISL gesture recognition"""
@@ -44,6 +53,12 @@ class GestureRecognizer:
         self.class_labels = None
         self.scaler = None
         
+        # LSTM variables
+        self.lstm_model = None
+        self.lstm_labels = None
+        self.sequence_length = 30
+        self.landmark_buffer = deque(maxlen=30)
+        
         # Performance tracking
         self.prediction_times = []
         self.frame_buffer = []
@@ -55,6 +70,9 @@ class GestureRecognizer:
         else:
             print("⚠️ Model not found. Creating placeholder model...")
             self.create_placeholder_model()
+        
+        # Try to load LSTM model
+        self._load_lstm_model()
     
     def create_placeholder_model(self):
         """Create a placeholder model for testing purposes"""
@@ -203,6 +221,10 @@ class GestureRecognizer:
 
         return best_features if best_features is not None else np.zeros((63,))
     
+    def _buffer_landmarks(self, features):
+        """Add normalized landmarks to the sequence buffer for LSTM"""
+        self.landmark_buffer.append(features.copy())
+    
     def normalize_landmarks(self, landmarks: np.ndarray) -> np.ndarray:
         """
         Normalize landmark coordinates
@@ -251,6 +273,9 @@ class GestureRecognizer:
             # Preprocess features
             features = self.preprocess_landmarks(landmarks_data)
             
+            # Buffer landmarks for LSTM
+            self._buffer_landmarks(features)
+            
             if self.model is None:
                 return None
             
@@ -267,6 +292,23 @@ class GestureRecognizer:
             else:
                 gesture = f"Class_{predicted_class_idx}"
             
+            # --- Letter Priority Filter ---
+            # If top prediction is a word (multi-char), check if a letter is close behind
+            LETTER_PRIORITY_MARGIN = 0.15  # prefer letter if within 15% confidence
+            if len(gesture) > 1 and self.class_labels:
+                # Find best single-character prediction (A-Z, 0-9)
+                best_letter_idx = None
+                best_letter_conf = 0.0
+                for idx, label in enumerate(self.class_labels):
+                    if len(label) == 1 and predictions[0][idx] > best_letter_conf:
+                        best_letter_conf = float(predictions[0][idx])
+                        best_letter_idx = idx
+                
+                # If a letter is close in confidence, prefer it
+                if best_letter_idx is not None and (confidence - best_letter_conf) < LETTER_PRIORITY_MARGIN:
+                    gesture = self.class_labels[best_letter_idx]
+                    confidence = best_letter_conf
+            
             # Calculate prediction time
             prediction_time = time.time() - start_time
             self.prediction_times.append(prediction_time)
@@ -280,12 +322,59 @@ class GestureRecognizer:
                 'confidence': confidence,
                 'landmarks_data': landmarks_data,
                 'prediction_time': prediction_time,
-                'hand_count': landmarks_data['hand_count']
+                'hand_count': landmarks_data['hand_count'],
+                'dynamic_gesture': self._get_lstm_prediction(),
             }
             
         except Exception as e:
             print(f"Error in prediction: {e}")
             return None
+    
+    def _load_lstm_model(self):
+        """Load LSTM model if available"""
+        lstm_path = os.path.join('models', 'trained', 'lstm_model.h5')
+        lstm_labels_path = os.path.join('models', 'trained', 'lstm_model_labels.pkl')
+        
+        if os.path.exists(lstm_path):
+            try:
+                self.lstm_model = keras.models.load_model(lstm_path)
+                if os.path.exists(lstm_labels_path):
+                    with open(lstm_labels_path, 'rb') as f:
+                        self.lstm_labels = pickle.load(f)
+                
+                config_path = os.path.join('models', 'trained', 'lstm_model_config.json')
+                if os.path.exists(config_path):
+                    with open(config_path) as f:
+                        cfg = json.load(f)
+                        self.sequence_length = cfg.get('sequence_length', 30)
+                        self.landmark_buffer = deque(maxlen=self.sequence_length)
+                
+                print(f"✅ LSTM model loaded ({len(self.lstm_labels)} dynamic gestures)")
+            except Exception as e:
+                print(f"⚠️ Could not load LSTM model: {e}")
+                self.lstm_model = None
+        else:
+            print("ℹ️ No LSTM model found — dynamic gestures disabled")
+    
+    def _get_lstm_prediction(self):
+        """Get dynamic gesture prediction from landmark buffer"""
+        if self.lstm_model is None or len(self.landmark_buffer) < self.sequence_length:
+            return None
+        
+        try:
+            sequence = np.array(list(self.landmark_buffer), dtype=np.float32)
+            prediction = self.lstm_model.predict(sequence.reshape(1, self.sequence_length, -1), verbose=0)
+            confidence = float(np.max(prediction[0]))
+            class_idx = int(np.argmax(prediction[0]))
+            
+            if confidence > 0.7 and self.lstm_labels and class_idx < len(self.lstm_labels):
+                return {
+                    'gesture': self.lstm_labels[class_idx],
+                    'confidence': confidence
+                }
+        except Exception:
+            pass
+        return None
     
     def draw_landmarks(self, image: np.ndarray, landmarks_data: Dict = None) -> np.ndarray:
         """
@@ -304,43 +393,51 @@ class GestureRecognizer:
         if landmarks_data is None:
             return image
         
-        # Convert to RGB for processing
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        rgb_image.flags.writeable = True
+        annotated_image = image.copy()
+        h, w, _ = annotated_image.shape
         
-        # Re-run MediaPipe to get drawing data
-        results = self.hands.process(rgb_image)
-        
-        # Convert back to BGR for display
-        annotated_image = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
-        
-        if results.multi_hand_landmarks:
-            for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
-                # Draw landmarks
-                self.mp_drawing.draw_landmarks(
-                    annotated_image,
-                    hand_landmarks,
-                    self.mp_hands.HAND_CONNECTIONS,
-                    self.mp_drawing_styles.get_default_hand_landmarks_style(),
-                    self.mp_drawing_styles.get_default_hand_connections_style()
-                )
+        # Draw landmarks from stored data (no re-processing)
+        for hand_idx, landmarks in enumerate(landmarks_data['landmarks']):
+            # Reshape to (21, 3) for drawing
+            points = np.array(landmarks).reshape(-1, 3)
+            pixel_points = []
+            
+            for point in points:
+                px = int(point[0] * w)
+                py = int(point[1] * h)
+                pixel_points.append((px, py))
+                # Draw landmark points
+                cv2.circle(annotated_image, (px, py), 4, (0, 255, 0), -1)
+                cv2.circle(annotated_image, (px, py), 6, (0, 0, 255), 1)
+            
+            # Draw hand connections (MediaPipe hand topology)
+            connections = [
+                (0,1),(1,2),(2,3),(3,4),       # Thumb
+                (0,5),(5,6),(6,7),(7,8),       # Index
+                (0,9),(9,10),(10,11),(11,12),  # Middle
+                (0,13),(13,14),(14,15),(15,16),# Ring
+                (0,17),(17,18),(18,19),(19,20),# Pinky
+                (5,9),(9,13),(13,17)           # Palm
+            ]
+            
+            for start_idx, end_idx in connections:
+                if start_idx < len(pixel_points) and end_idx < len(pixel_points):
+                    cv2.line(annotated_image, pixel_points[start_idx], pixel_points[end_idx], (0, 255, 0), 2)
+            
+            # Draw bounding box
+            if 'bbox' in landmarks_data and hand_idx < len(landmarks_data['bbox']):
+                bbox = landmarks_data['bbox'][hand_idx]
+                x1, y1, x2, y2 = bbox
+                x1, x2 = int(x1 * w), int(x2 * w)
+                y1, y2 = int(y1 * h), int(y2 * h)
                 
-                # Draw bounding box
-                if 'bbox' in landmarks_data and idx < len(landmarks_data['bbox']):
-                    bbox = landmarks_data['bbox'][idx]
-                    h, w, _ = annotated_image.shape
-                    
-                    x1, y1, x2, y2 = bbox
-                    x1, x2 = int(x1 * w), int(x2 * w)
-                    y1, y2 = int(y1 * h), int(y2 * h)
-                    
-                    cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    
-                    # Draw handedness label
-                    if 'handedness' in landmarks_data and idx < len(landmarks_data['handedness']):
-                        handedness = landmarks_data['handedness'][idx]
-                        cv2.putText(annotated_image, handedness, (x1, y1 - 10),
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                # Draw handedness label
+                if 'handedness' in landmarks_data and hand_idx < len(landmarks_data['handedness']):
+                    handedness = landmarks_data['handedness'][hand_idx]
+                    cv2.putText(annotated_image, handedness, (x1, y1 - 10),
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
         return annotated_image
     

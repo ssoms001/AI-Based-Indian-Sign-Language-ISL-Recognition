@@ -2,6 +2,13 @@
 Natural Language Processing Module for ISL Gesture Recognition
 Processes gesture sequences to form meaningful sentences
 """
+import sys
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import re
 from typing import List, Dict, Optional, Tuple
 import nltk
@@ -40,14 +47,19 @@ class NLPProcessor:
         """Initialize NLTK and spaCy models"""
         try:
             # Download required NLTK data
-            nltk_downloads = [
-                'punkt', 'stopwords', 'wordnet', 'averaged_perceptron_tagger',
-                'omw-1.4', 'vader_lexicon'
-            ]
+            # Map NLTK items to their correct resource paths
+            nltk_downloads = {
+                'punkt': 'tokenizers/punkt',
+                'stopwords': 'corpora/stopwords',
+                'wordnet': 'corpora/wordnet',
+                'averaged_perceptron_tagger': 'taggers/averaged_perceptron_tagger',
+                'omw-1.4': 'corpora/omw-1.4',
+                'vader_lexicon': 'sentiment/vader_lexicon'
+            }
             
-            for item in nltk_downloads:
+            for item, path in nltk_downloads.items():
                 try:
-                    nltk.data.find(f'tokenizers/{item}')
+                    nltk.data.find(path)
                 except LookupError:
                     try:
                         nltk.download(item, quiet=True)
@@ -86,11 +98,14 @@ class NLPProcessor:
         
         # ISL-specific words and phrases
         self.isl_words = {
-            'HELLO', 'GOODBYE', 'THANK', 'PLEASE', 'SORRY', 'YES', 'NO', 'HELP',
-            'WATER', 'FOOD', 'TOILET', 'HOME', 'SCHOOL', 'WORK', 'FAMILY',
+            'HELLO', 'GOODBYE', 'THANK', 'THANKYOU', 'PLEASE', 'SORRY', 'YES', 'NO', 'HELP',
+            'WATER', 'FOOD', 'TOILET', 'HOME', 'HOUSE', 'SCHOOL', 'WORK', 'FAMILY',
             'MOTHER', 'FATHER', 'BROTHER', 'SISTER', 'FRIEND', 'TEACHER',
             'DOCTOR', 'HOSPITAL', 'MEDICINE', 'PAIN', 'HAPPY', 'SAD', 'ANGRY',
-            'LOVE', 'LIKE', 'WANT', 'NEED', 'HAVE', 'GO', 'COME', 'SIT', 'STAND'
+            'LOVE', 'LIKE', 'WANT', 'NEED', 'HAVE', 'GO', 'COME', 'SIT', 'STAND',
+            'AFRAID', 'AGREE', 'ASSISTANCE', 'BAD', 'BECOME', 'COLLEGE', 'FROM',
+            'PRAY', 'SECONDARY', 'SKIN', 'SMALL', 'SPACE', 'SPECIFIC', 'TODAY',
+            'WARN', 'WHICH', 'YOU', 'MONEY', 'TIME', 'MORNING', 'NIGHT'
         }
         
         # Word completion patterns
@@ -219,8 +234,7 @@ class NLPProcessor:
             # Clean and validate gesture
             clean_gesture = gesture.strip().upper()
             if (clean_gesture and 
-                clean_gesture.isalpha() and 
-                len(clean_gesture) == 1 and
+                (clean_gesture.isalnum() or clean_gesture == '+') and 
                 clean_gesture != last_gesture):
                 filtered.append(clean_gesture)
                 last_gesture = clean_gesture
@@ -349,7 +363,36 @@ class NLPProcessor:
                 'HOM': 'HOME',
                 'SOR': 'SORRY',
                 'SRY': 'SORRY',  # Common abbreviation
-                'YES': 'YES'
+                'YES': 'YES',
+                'AFR': 'AFRAID',
+                'AGR': 'AGREE',
+                'AST': 'ASSISTANCE',
+                'COL': 'COLLEGE',
+                'SEC': 'SECONDARY',
+                'SMA': 'SMALL',
+                'SPA': 'SPACE',
+                'SPE': 'SPECIFIC',
+                'STA': 'STAND',
+                'TOD': 'TODAY',
+                'WRN': 'WARN',
+                'WHI': 'WHICH',
+                'MOT': 'MOTHER',
+                'FAT': 'FATHER',
+                'BRO': 'BROTHER',
+                'SIS': 'SISTER',
+                'FRI': 'FRIEND',
+                'TEA': 'TEACHER',
+                'FAM': 'FAMILY',
+                'HOU': 'HOUSE',
+                'MON': 'MONEY',
+                'TIM': 'TIME',
+                'MOR': 'MORNING',
+                'NIG': 'NIGHT',
+                'HAP': 'HAPPY',
+                'SAD': 'SAD',
+                'THK': 'THANKYOU',
+                'GDB': 'GOODBYE',
+                'BYE': 'GOODBYE'
             }
             
             # Only return if exact match in high confidence patterns

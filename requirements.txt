@@ -24,12 +24,15 @@ spacy==3.6.1
 # Text-to-Speech
 pyttsx3==2.90
 gTTS==2.3.2
+pygame==2.5.2
+
+# Translation
+googletrans==4.0.0-rc.1
 
 # Utilities
 python-dotenv==1.0.0
 Pillow==10.0.0
 requests==2.31.0
-jsonify==0.5
 
 # Development & Testing
 pytest==7.4.2
@@ -39,3 +42,6 @@ flake8==6.0.0
 
 # Performance Monitoring
 psutil==5.9.5
+
+# Production Server
+gunicorn==21.2.0

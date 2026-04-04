@@ -2,6 +2,16 @@
 Text-to-Speech Handler for ISL Gesture Recognition System
 Supports multiple TTS engines including pyttsx3 and gTTS
 """
+import sys
+import os
+
+# Fix Windows console encoding for emoji characters
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import pyttsx3
 import threading
 import time
@@ -91,23 +101,19 @@ class TTSHandler:
                     self.engine = None
     
     def _init_pyttsx3(self):
-        """Initialize pyttsx3 engine"""
-        self.engine = pyttsx3.init()
+        """Initialize pyttsx3 engine marker (actual engine created per-use for thread safety)"""
+        # Test that pyttsx3 works, but don't keep the engine
+        # (pyttsx3 must be used on the thread that creates it)
+        test_engine = pyttsx3.init()
+        test_engine.stop()
+        del test_engine
         
-        # Set properties from config
-        rate = self.config.get('TTS_RATE', 150)
-        volume = self.config.get('TTS_VOLUME', 0.8)
-        voice_index = self.config.get('TTS_VOICE_INDEX', 0)
+        self.engine = 'pyttsx3'  # Use string marker like gTTS
+        self._tts_rate = self.config.get('TTS_RATE', 150)
+        self._tts_volume = self.config.get('TTS_VOLUME', 0.8)
+        self._tts_voice_index = self.config.get('TTS_VOICE_INDEX', 0)
         
-        self.engine.setProperty('rate', rate)
-        self.engine.setProperty('volume', volume)
-        
-        # Set voice
-        voices = self.engine.getProperty('voices')
-        if voices and len(voices) > voice_index:
-            self.engine.setProperty('voice', voices[voice_index].id)
-        
-        print(f"✅ pyttsx3 engine initialized (rate: {rate}, volume: {volume})")
+        print(f"✅ pyttsx3 engine verified (rate: {self._tts_rate}, volume: {self._tts_volume})")
     
     def _init_gtts(self):
         """Initialize gTTS (Google Text-to-Speech)"""
@@ -177,8 +183,17 @@ class TTSHandler:
         
         try:
             if self.engine_type == 'pyttsx3':
-                self.engine.say(text)
-                self.engine.runAndWait()
+                # Create a fresh engine on this thread (pyttsx3 thread-safety)
+                engine = pyttsx3.init()
+                engine.setProperty('rate', getattr(self, '_tts_rate', 150))
+                engine.setProperty('volume', getattr(self, '_tts_volume', 0.8))
+                voices = engine.getProperty('voices')
+                voice_idx = getattr(self, '_tts_voice_index', 0)
+                if voices and len(voices) > voice_idx:
+                    engine.setProperty('voice', voices[voice_idx].id)
+                engine.say(text)
+                engine.runAndWait()
+                engine.stop()
                 
             elif self.engine_type == 'gtts':
                 self._speak_with_gtts(text)
@@ -230,11 +245,10 @@ class TTSHandler:
     def stop_speaking(self):
         """Stop current speech"""
         try:
-            if self.engine_type == 'pyttsx3' and self.engine:
-                self.engine.stop()
-                
-            elif self.engine_type == 'gtts':
+            if self.engine_type == 'gtts':
                 pygame.mixer.music.stop()
+            # pyttsx3 engines are created per-use in _speak_sync,
+            # so there is no persistent engine to stop here.
             
             self.is_speaking = False
             print("🛑 TTS stopped")
@@ -250,11 +264,8 @@ class TTSHandler:
             rate: Speaking rate (words per minute)
         """
         if self.engine_type == 'pyttsx3' and self.engine:
-            try:
-                self.engine.setProperty('rate', rate)
-                print(f"🎚️ TTS rate set to {rate} WPM")
-            except Exception as e:
-                print(f"❌ Error setting TTS rate: {e}")
+            self._tts_rate = rate
+            print(f"🎚️ TTS rate set to {rate} WPM")
     
     def set_volume(self, volume: float):
         """
@@ -264,12 +275,9 @@ class TTSHandler:
             volume: Volume level (0.0 to 1.0)
         """
         if self.engine_type == 'pyttsx3' and self.engine:
-            try:
-                volume = max(0.0, min(1.0, volume))  # Clamp between 0 and 1
-                self.engine.setProperty('volume', volume)
-                print(f"🔊 TTS volume set to {volume}")
-            except Exception as e:
-                print(f"❌ Error setting TTS volume: {e}")
+            volume = max(0.0, min(1.0, volume))  # Clamp between 0 and 1
+            self._tts_volume = volume
+            print(f"🔊 TTS volume set to {volume}")
     
     def set_voice(self, voice_index: int):
         """
@@ -279,15 +287,8 @@ class TTSHandler:
             voice_index: Index of voice to use
         """
         if self.engine_type == 'pyttsx3' and self.engine:
-            try:
-                voices = self.engine.getProperty('voices')
-                if voices and 0 <= voice_index < len(voices):
-                    self.engine.setProperty('voice', voices[voice_index].id)
-                    print(f"🗣️ TTS voice set to index {voice_index}")
-                else:
-                    print(f"⚠️ Voice index {voice_index} out of range")
-            except Exception as e:
-                print(f"❌ Error setting TTS voice: {e}")
+            self._tts_voice_index = voice_index
+            print(f"🗣️ TTS voice set to index {voice_index}")
     
     def get_voices(self) -> List[Dict]:
         """
@@ -298,7 +299,8 @@ class TTSHandler:
         """
         if self.engine_type == 'pyttsx3' and self.engine:
             try:
-                voices = self.engine.getProperty('voices')
+                temp_engine = pyttsx3.init()
+                voices = temp_engine.getProperty('voices')
                 voice_list = []
                 
                 for i, voice in enumerate(voices):
@@ -311,6 +313,8 @@ class TTSHandler:
                     }
                     voice_list.append(voice_info)
                 
+                temp_engine.stop()
+                del temp_engine
                 return voice_list
                 
             except Exception as e:
@@ -333,15 +337,11 @@ class TTSHandler:
         }
         
         if self.engine_type == 'pyttsx3' and self.engine:
-            try:
-                properties.update({
-                    'rate': self.engine.getProperty('rate'),
-                    'volume': self.engine.getProperty('volume'),
-                    'voice': self.engine.getProperty('voice'),
-                    'voices_count': len(self.engine.getProperty('voices') or [])
-                })
-            except Exception as e:
-                print(f"⚠️ Could not get some properties: {e}")
+            properties.update({
+                'rate': getattr(self, '_tts_rate', 150),
+                'volume': getattr(self, '_tts_volume', 0.8),
+                'voice_index': getattr(self, '_tts_voice_index', 0),
+            })
         
         return properties
     
@@ -374,12 +374,11 @@ class TTSHandler:
 
             self.stop_speaking()
 
-            if self.engine_type == 'pyttsx3' and self.engine:
-                # pyttsx3 doesn't have explicit cleanup
-                pass
-
-            elif self.engine_type == 'gtts':
-                pygame.mixer.quit()
+            if self.engine_type == 'gtts':
+                try:
+                    pygame.mixer.quit()
+                except Exception:
+                    pass
 
             self.engine = None
             print("🧹 TTS handler cleaned up")

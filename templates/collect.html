@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignBridge — Gesture Data Collection</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <style>
+        .word-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .word-chip {
+            padding: 8px 16px;
+            border-radius: 25px;
+            cursor: pointer;
+            border: 2px solid var(--border);
+            background: var(--bg-card);
+            font-weight: 600;
+            font-size: 0.9em;
+            transition: all 0.2s var(--ease);
+            color: var(--text-primary);
+        }
+
+        .word-chip:hover {
+            border-color: var(--primary);
+            transform: scale(1.05);
+        }
+
+        .word-chip.active {
+            background: var(--gradient-primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .word-chip .count {
+            font-size: 0.75em;
+            opacity: 0.7;
+            margin-left: 4px;
+        }
+
+        .capture-area {
+            position: relative;
+        }
+
+        .capture-flash {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            opacity: 0;
+            border-radius: var(--radius-md);
+            pointer-events: none;
+            transition: opacity 0.1s;
+        }
+
+        .capture-flash.active {
+            opacity: 0.6;
+        }
+
+        .progress-ring {
+            width: 120px;
+            height: 120px;
+        }
+
+        .progress-ring circle {
+            transition: stroke-dashoffset 0.3s;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        #webcam-preview {
+            width: 100%;
+            border-radius: var(--radius-md);
+            border: 3px solid var(--primary-light);
+        }
+
+        .capture-btn {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: none;
+            font-size: 1.5em;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s var(--ease);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .capture-btn.manual {
+            background: var(--gradient-primary);
+        }
+
+        .capture-btn.auto {
+            background: var(--gradient-accent);
+        }
+
+        .capture-btn.recording {
+            background: var(--gradient-warm);
+            animation: micPulse 1.5s infinite;
+        }
+
+        .capture-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .sample-gallery {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .sample-thumb {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+    </style>
+    {% include 'partials/_head.html' %}
+</head>
+
+<body>
+    {% include 'partials/_navbar.html' %}
+
+    <div class="container mt-3 mb-5">
+        <div class="row">
+            <!-- Left: Gesture selection -->
+            <div class="col-lg-4">
+                <div class="card mb-3 fade-in">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-hand-paper me-2"></i>Select Gesture</h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Custom Gesture Input -->
+                        <h6 style="color:var(--text-secondary); font-weight:700; font-size:0.8em; text-transform:uppercase; letter-spacing:1px;">
+                            <i class="fas fa-plus-circle me-1"></i>Create Custom Gesture
+                        </h6>
+                        <div class="d-flex gap-2 mb-3">
+                            <input type="text" id="custom-gesture-input" class="form-control form-control-sm"
+                                placeholder="Type new word (e.g. WELCOME)"
+                                style="border-radius:20px; font-weight:600; text-transform:uppercase;">
+                            <button class="btn btn-sm px-3" id="add-custom-btn"
+                                style="background:var(--gradient-primary);color:white;border-radius:20px;white-space:nowrap;font-weight:600;"
+                                onclick="addCustomGesture()">
+                                <i class="fas fa-plus me-1"></i>Add
+                            </button>
+                        </div>
+                        <div class="word-grid mb-3" id="custom-gestures"></div>
+
+                        <h6
+                            style="color:var(--text-secondary); font-weight:700; font-size:0.8em; text-transform:uppercase; letter-spacing:1px;">
+                            Common Words (NEW)
+                        </h6>
+                        <div class="word-grid mb-3" id="word-gestures"></div>
+
+                        <h6 style="color:var(--text-secondary); font-weight:700; font-size:0.8em; text-transform:uppercase; letter-spacing:1px;"
+                            class="mt-3">
+                            Letters & Numbers
+                        </h6>
+                        <div class="word-grid" id="alpha-gestures"></div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Center: Webcam + capture -->
+            <div class="col-lg-5">
+                <div class="card mb-3 fade-in">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-video me-2"></i>Camera
+                            <span class="badge bg-light text-dark ms-2" id="active-gesture-badge">None selected</span>
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="capture-area mb-3">
+                            <div id="camera-selector" class="mb-2"></div>
+                            <video id="webcam-preview" autoplay playsinline muted
+                                style="width:100%; border-radius: var(--radius-lg); transform: scaleX(-1);"></video>
+                            <canvas id="capture-canvas" style="display:none;"></canvas>
+                            <div class="capture-flash" id="capture-flash"></div>
+                        </div>
+
+                        <div class="d-flex justify-content-center gap-3 mb-3">
+                            <button class="capture-btn manual" id="capture-btn" onclick="captureFrame()" disabled>
+                                <i class="fas fa-camera"></i>
+                                <span style="font-size:0.5em;">CAPTURE</span>
+                            </button>
+                            <button class="capture-btn auto" id="auto-btn" onclick="toggleAutoCapture()" disabled>
+                                <i class="fas fa-bolt" id="auto-icon"></i>
+                                <span style="font-size:0.5em;" id="auto-label">AUTO</span>
+                            </button>
+                        </div>
+
+                        <div class="text-center">
+                            <p style="color:var(--text-secondary); font-size:0.85em;" id="capture-info">
+                                Select a gesture, then capture images. Aim for <strong>500+</strong> per gesture.
+                            </p>
+                            <div class="progress" style="height:8px;">
+                                <div class="progress-bar" id="capture-progress"
+                                    style="width:0%; background: var(--gradient-primary);"></div>
+                            </div>
+                            <small style="color:var(--text-muted);" id="capture-count">0 / 500 images</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Instructions -->
+                <div class="card fade-in">
+                    <div class="card-header" style="background: linear-gradient(135deg, #8b5cf6, #a78bfa);">
+                        <h5 class="mb-0"><i class="fas fa-info-circle me-2"></i>How to Collect</h5>
+                    </div>
+                    <div class="card-body" style="font-size:0.9em;">
+                        <ol style="color: var(--text-primary);">
+                            <li><strong>Select a gesture</strong> from the left panel</li>
+                            <li>Position your hand clearly in front of the camera</li>
+                            <li>Click <strong>CAPTURE</strong> for single shots or <strong>AUTO</strong> for burst mode
+                            </li>
+                            <li>Vary your hand angle, distance, and background</li>
+                            <li>Collect at least <strong>500 images</strong> per gesture</li>
+                            <li>When done, click <strong>Retrain Model</strong></li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Samples + Retrain -->
+            <div class="col-lg-3">
+                <!-- 1. Captured Samples -->
+                <div class="card mb-3 fade-in">
+                    <div class="card-header" style="background: var(--gradient-warm);">
+                        <h5 class="mb-0"><i class="fas fa-images me-2"></i>Captured Samples</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="sample-gallery" id="sample-gallery">
+                            <p style="color:var(--text-muted); font-size:0.85em;">Samples will appear here...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. Model Training (step-wise order) -->
+                <div class="card fade-in mb-3">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-cogs me-2"></i>Model Training</h5>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size:0.75em; color:var(--text-muted); margin-bottom:8px;">
+                            <strong>Step 1:</strong> Preprocess → <strong>Step 2:</strong> Retrain
+                        </p>
+                        <button class="btn btn-outline-primary w-100 mb-2" onclick="preprocessData()">
+                            <i class="fas fa-sync me-2"></i>① Preprocess Data
+                        </button>
+                        <button class="btn w-100 mb-2" style="background:var(--gradient-primary);color:white;"
+                            onclick="startRetraining()" id="retrain-btn">
+                            <i class="fas fa-brain me-2"></i>② Retrain CNN Model
+                        </button>
+                        <div id="train-status" class="mt-2" style="font-size:0.85em; color:var(--text-secondary);">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Dynamic Gestures (LSTM) with Train button inside -->
+                <div class="card fade-in mb-3">
+                    <div class="card-header" style="background: linear-gradient(135deg, #8b5cf6, #a78bfa);">
+                        <h5 class="mb-0"><i class="fas fa-film me-2"></i>Dynamic Gestures (LSTM)</h5>
+                    </div>
+                    <div class="card-body">
+                        <input type="text" class="form-control mb-2" id="seq-gesture-name"
+                            placeholder="Gesture name (e.g. WAVE, HELLO)">
+                        <button class="btn w-100 mb-2" id="record-seq-btn"
+                            style="background:linear-gradient(135deg, #8b5cf6, #a78bfa);color:white;"
+                            onclick="recordSequence()">
+                            <i class="fas fa-record-vinyl me-2"></i>Record 1s Sequence
+                        </button>
+                        <button class="btn w-100 mb-2"
+                            style="background:linear-gradient(135deg, #6d28d9, #7c3aed);color:white;"
+                            onclick="trainLSTM()">
+                            <i class="fas fa-wave-square me-2"></i>Train LSTM Model
+                        </button>
+                        <div id="seq-status" style="font-size:0.85em; color:var(--text-secondary);"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/camera.js') }}"></script>
+    <script>
+
+        // Word gestures to collect
+        const WORD_GESTURES = [
+            'AFRAID', 'AGREE', 'ASSISTANCE', 'BAD', 'BECOME', 'BROTHER',
+            'COLLEGE', 'DOCTOR', 'FAMILY', 'FATHER', 'FOOD', 'FRIEND',
+            'FROM', 'GOODBYE', 'HAPPY', 'HELLO', 'HOUSE', 'LOVE',
+            'MONEY', 'MORNING', 'MOTHER', 'NIGHT', 'NO', 'PAIN', 'PLEASE',
+            'PRAY', 'SAD', 'SECONDARY', 'SISTER', 'SKIN', 'SMALL',
+            'SORRY', 'SPACE', 'SPECIFIC', 'STAND', 'TEACHER', 'THANKYOU',
+            'TIME', 'TODAY', 'WARN', 'WATER', 'WHICH', 'WORK', 'YES', 'YOU'
+        ];
+        const ALPHA_GESTURES = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
+
+        let activeGesture = null;
+        let autoCapture = false;
+        let autoCaptureInterval = null;
+        let capturedCount = 0;
+        let cam = null;
+        let customGestures = JSON.parse(localStorage.getItem('customGestures') || '[]');
+
+        // Custom gesture functions
+        function addCustomGesture() {
+            const input = document.getElementById('custom-gesture-input');
+            const name = input.value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+            if (!name) return;
+
+            // Check duplicates
+            if (WORD_GESTURES.includes(name) || ALPHA_GESTURES.includes(name) || customGestures.includes(name)) {
+                alert(`"${name}" already exists!`);
+                input.value = '';
+                return;
+            }
+
+            customGestures.push(name);
+            localStorage.setItem('customGestures', JSON.stringify(customGestures));
+            renderCustomChip(name);
+            input.value = '';
+            loadCounts(); // refresh counts
+        }
+
+        function renderCustomChip(name) {
+            const container = document.getElementById('custom-gestures');
+            const chip = document.createElement('div');
+            chip.className = 'word-chip';
+            chip.dataset.gesture = name;
+            chip.style.position = 'relative';
+            chip.innerHTML = `${name} <span class="count" id="count-${name}">0</span>
+                <span onclick="event.stopPropagation(); removeCustomGesture('${name}')" 
+                      style="margin-left:6px;color:#f87171;cursor:pointer;font-size:0.8em;" title="Remove">&times;</span>`;
+            chip.onclick = () => selectGesture(name);
+            container.appendChild(chip);
+        }
+
+        function removeCustomGesture(name) {
+            if (!confirm(`Remove "${name}" from custom gestures?`)) return;
+            customGestures = customGestures.filter(g => g !== name);
+            localStorage.setItem('customGestures', JSON.stringify(customGestures));
+            const chip = document.querySelector(`[data-gesture="${name}"]`);
+            if (chip) chip.remove();
+            if (activeGesture === name) activeGesture = null;
+        }
+
+        function loadCustomGestures() {
+            customGestures.forEach(name => renderCustomChip(name));
+        }
+
+        // Enter key support for custom input
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('custom-gesture-input')?.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') addCustomGesture();
+            });
+        });
+
+        // Initialize client-side camera
+        async function initWebcam() {
+            cam = new SignBridgeCamera('#webcam-preview', {
+                fps: 1,
+                mirror: true,
+                quality: 0.85,
+                onCameraReady: () => console.log('Collect camera ready'),
+                onError: (e) => console.error('Camera error:', e)
+            });
+            await cam.buildCameraSelector('#camera-selector');
+            await cam.start();
+        }
+
+        // Build gesture chips
+        function buildGestureChips() {
+            const wordContainer = document.getElementById('word-gestures');
+            WORD_GESTURES.forEach(w => {
+                const chip = document.createElement('div');
+                chip.className = 'word-chip';
+                chip.dataset.gesture = w;
+                chip.innerHTML = `${w} <span class="count" id="count-${w}">0</span>`;
+                chip.onclick = () => selectGesture(w);
+                wordContainer.appendChild(chip);
+            });
+
+            const alphaContainer = document.getElementById('alpha-gestures');
+            ALPHA_GESTURES.forEach(a => {
+                const chip = document.createElement('div');
+                chip.className = 'word-chip';
+                chip.dataset.gesture = a;
+                chip.innerHTML = `${a} <span class="count" id="count-${a}">0</span>`;
+                chip.onclick = () => selectGesture(a);
+                alphaContainer.appendChild(chip);
+            });
+
+            // Load existing counts
+            loadCounts();
+        }
+
+        async function loadCounts() {
+            try {
+                const r = await fetch('/api/gesture_counts');
+                const data = await r.json();
+                if (data.counts) {
+                    for (const [gesture, count] of Object.entries(data.counts)) {
+                        const el = document.getElementById(`count-${gesture}`);
+                        if (el) el.textContent = count;
+                    }
+                }
+            } catch (e) { console.log('Could not load counts'); }
+        }
+
+        function selectGesture(gesture) {
+            activeGesture = gesture;
+            document.querySelectorAll('.word-chip').forEach(c => c.classList.remove('active'));
+            document.querySelector(`[data-gesture="${gesture}"]`).classList.add('active');
+            document.getElementById('active-gesture-badge').textContent = gesture;
+            document.getElementById('capture-btn').disabled = false;
+            document.getElementById('auto-btn').disabled = false;
+
+            // Load count for this gesture
+            fetch(`/api/gesture_count/${gesture}`)
+                .then(r => r.json())
+                .then(data => {
+                    capturedCount = data.count || 0;
+                    updateProgress();
+                    loadSampleImages(gesture);
+                });
+        }
+
+        function updateProgress() {
+            const target = 500;
+            const pct = Math.min(100, (capturedCount / target) * 100);
+            document.getElementById('capture-progress').style.width = pct + '%';
+            document.getElementById('capture-count').textContent = `${capturedCount} / ${target} images`;
+
+            const countEl = document.getElementById(`count-${activeGesture}`);
+            if (countEl) countEl.textContent = capturedCount;
+        }
+
+        async function captureFrame() {
+            if (!activeGesture || !cam) return;
+
+            // Flash effect
+            const flash = document.getElementById('capture-flash');
+            flash.classList.add('active');
+            setTimeout(() => flash.classList.remove('active'), 150);
+
+            // Capture frame from browser camera as base64
+            const frameData = cam.captureFrame();
+            if (!frameData) return;
+
+            try {
+                const r = await fetch('/api/collect_gesture', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        gesture: activeGesture,
+                        image: frameData
+                    })
+                });
+                const result = await r.json();
+                if (result.success) {
+                    capturedCount = result.count || (capturedCount + 1);
+                    updateProgress();
+                    addThumbnail(frameData);
+                }
+            } catch (e) { console.error('Capture error:', e); }
+        }
+
+        function addThumbnail(imageData) {
+            const gallery = document.getElementById('sample-gallery');
+            if (gallery.querySelector('p')) gallery.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = imageData;
+            img.className = 'sample-thumb';
+            gallery.prepend(img);
+            // Keep only last 30 thumbnails in view
+            while (gallery.children.length > 30) gallery.lastChild.remove();
+        }
+
+        function toggleAutoCapture() {
+            if (autoCapture) {
+                stopAutoCapture();
+            } else {
+                autoCapture = true;
+                document.getElementById('auto-btn').classList.add('recording');
+                document.getElementById('auto-icon').className = 'fas fa-stop';
+                document.getElementById('auto-label').textContent = 'STOP';
+                autoCaptureInterval = setInterval(captureFrame, 200); // 5 fps capture
+            }
+        }
+
+        function stopAutoCapture() {
+            autoCapture = false;
+            clearInterval(autoCaptureInterval);
+            document.getElementById('auto-btn').classList.remove('recording');
+            document.getElementById('auto-icon').className = 'fas fa-bolt';
+            document.getElementById('auto-label').textContent = 'AUTO';
+        }
+
+        async function loadSampleImages(gesture) {
+            const gallery = document.getElementById('sample-gallery');
+            gallery.innerHTML = '<p style="color:var(--text-muted); font-size:0.85em;">Loading...</p>';
+            try {
+                const r = await fetch(`/api/gesture_samples/${gesture}`);
+                const data = await r.json();
+                gallery.innerHTML = '';
+                if (data.samples && data.samples.length > 0) {
+                    data.samples.forEach(src => {
+                        const img = document.createElement('img');
+                        img.src = src;
+                        img.className = 'sample-thumb';
+                        gallery.appendChild(img);
+                    });
+                } else {
+                    gallery.innerHTML = '<p style="color:var(--text-muted); font-size:0.85em;">No samples yet</p>';
+                }
+            } catch (e) {
+                gallery.innerHTML = '<p style="color:var(--text-muted); font-size:0.85em;">No samples yet</p>';
+            }
+        }
+
+        async function preprocessData() {
+            const status = document.getElementById('train-status');
+            status.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Preprocessing data...';
+            try {
+                const r = await fetch('/api/preprocess', { method: 'POST' });
+                const data = await r.json();
+                if (data.success) {
+                    status.innerHTML = `<i class="fas fa-check text-success me-1"></i> ${data.message}`;
+                } else {
+                    status.innerHTML = `<i class="fas fa-times text-danger me-1"></i> ${data.error}`;
+                }
+            } catch (e) {
+                status.innerHTML = `<i class="fas fa-times text-danger me-1"></i> Error: ${e.message}`;
+            }
+        }
+
+        async function startRetraining() {
+            const status = document.getElementById('train-status');
+            status.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Training model... This may take several minutes.';
+            document.getElementById('retrain-btn').disabled = true;
+            try {
+                const r = await fetch('/api/retrain', { method: 'POST' });
+                const data = await r.json();
+                if (data.success) {
+                    status.innerHTML = `<i class="fas fa-check text-success me-1"></i> ${data.message}`;
+                } else {
+                    status.innerHTML = `<i class="fas fa-times text-danger me-1"></i> ${data.error}`;
+                }
+            } catch (e) {
+                status.innerHTML = `<i class="fas fa-times text-danger me-1"></i> Error: ${e.message}`;
+            }
+            document.getElementById('retrain-btn').disabled = false;
+        }
+        // ═══════════════════════════════════════
+        // LSTM Sequence Recording
+        // ═══════════════════════════════════════
+
+        async function recordSequence() {
+            const gesture = document.getElementById('seq-gesture-name').value.trim().toUpperCase();
+            const status = document.getElementById('seq-status');
+            const btn = document.getElementById('record-seq-btn');
+
+            if (!gesture) {
+                status.innerHTML = '<i class="fas fa-exclamation-triangle text-warning me-1"></i> Enter a gesture name first';
+                return;
+            }
+            if (!stream) {
+                status.innerHTML = '<i class="fas fa-exclamation-triangle text-warning me-1"></i> Start webcam first';
+                return;
+            }
+
+            btn.disabled = true;
+            status.innerHTML = '<i class="fas fa-circle text-danger me-1"></i> Recording... hold your gesture for 1 second!';
+
+            // Wait ~1 second while the main video feed fills the landmark buffer
+            // The backend gesture_recognizer buffers 30 frames of landmarks automatically
+            for (let i = 0; i < 30; i++) {
+                status.innerHTML = `<i class="fas fa-circle text-danger me-1"></i> Recording ${i + 1}/30`;
+                await new Promise(resolve => setTimeout(resolve, 33));
+            }
+
+            // Save the buffered sequence
+            try {
+                const seqResp = await fetch('/api/collect_sequence', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gesture: gesture, use_buffer: true })
+                });
+                const seqData = await seqResp.json();
+
+                if (seqData.success) {
+                    status.innerHTML = `<i class="fas fa-check text-success me-1"></i> Saved! Total: ${seqData.count} sequences for ${gesture}`;
+                } else {
+                    status.innerHTML = `<i class="fas fa-times text-danger me-1"></i> ${seqData.error}`;
+                }
+            } catch (e) {
+                status.innerHTML = `<i class="fas fa-times text-danger me-1"></i> ${e.message}`;
+            }
+
+            btn.disabled = false;
+        }
+
+        async function trainLSTM() {
+            const status = document.getElementById('train-status');
+            status.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Training LSTM... This may take a few minutes.';
+            try {
+                const r = await fetch('/api/retrain_lstm', { method: 'POST' });
+                const data = await r.json();
+                if (data.success) {
+                    status.innerHTML = `<i class="fas fa-check text-success me-1"></i> ${data.message}`;
+                } else {
+                    status.innerHTML = `<i class="fas fa-times text-danger me-1"></i> ${data.error}`;
+                }
+            } catch (e) {
+                status.innerHTML = `<i class="fas fa-times text-danger me-1"></i> Error: ${e.message}`;
+            }
+        }
+
+        // Init
+        initWebcam();
+        buildGestureChips();
+        loadCustomGestures();
+    </script>
+</body>
+
+</html>

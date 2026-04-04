@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignBridge — Speech to Text</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    {% include 'partials/_head.html' %}
+    <style>
+        .waveform-container {
+            width: 100%;
+            height: 120px;
+            background: var(--bg-input, #1a1a1a);
+            border-radius: 0 0 var(--radius-md, 12px) var(--radius-md, 12px);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .waveform-container.recording {
+            box-shadow: inset 0 0 30px rgba(255, 80, 80, 0.15);
+        }
+
+        #waveform-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .mic-btn {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 3px solid var(--accent, #ff7f50);
+            background: var(--bg-card, #141414);
+            color: var(--accent, #ff7f50);
+            font-size: 1.8em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .mic-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .mic-btn.recording {
+            background: var(--accent, #ff7f50);
+            color: white;
+            animation: pulse-ring 1.5s infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 127, 80, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 20px rgba(255, 127, 80, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 127, 80, 0);
+            }
+        }
+
+        .speech-text-display {
+            min-height: 100px;
+            padding: 16px;
+            border-radius: var(--radius-md, 12px);
+            border: 2px solid var(--border, #222);
+            background: var(--bg-input, #1a1a1a);
+            font-size: 1.1em;
+            line-height: 1.6;
+            color: var(--text-primary, #f0f0f0);
+        }
+
+        .speech-text-display.listening {
+            border-color: var(--accent, #ff7f50);
+        }
+
+        .transcript-box {
+            min-height: 60px;
+            padding: 16px;
+            border-radius: var(--radius-md, 12px);
+            border: 1px solid var(--border, #222);
+            background: var(--bg-input, #1a1a1a);
+            color: var(--text-primary, #f0f0f0);
+        }
+
+        .text-controls button {
+            background: var(--bg-elevated, #1e1e1e);
+            border: 1px solid var(--border, #222);
+            color: var(--text-primary, #f0f0f0);
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .suggestion-btn {
+            padding: 8px 16px;
+            border-radius: 25px;
+            border: 1px solid var(--border, #222);
+            background: var(--bg-card, #141414);
+            color: var(--text-primary, #f0f0f0);
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s ease;
+        }
+
+        .suggestion-btn:hover {
+            border-color: var(--primary, #42c498);
+            background: var(--primary-light, #1a3d32);
+        }
+    </style>
+</head>
+
+<body>
+    {% include 'partials/_navbar.html' %}
+
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+
+                <!-- Header -->
+                <div class="text-center mb-4 fade-in">
+                    <h2 style="font-weight:700; color: var(--text-primary);">
+                        <i class="fas fa-microphone-alt me-2" style="color:var(--accent);"></i>
+                        Speech to Text
+                    </h2>
+                    <p style="color: var(--text-secondary);">
+                        Tap the microphone and speak — your words appear as text in real-time
+                    </p>
+                </div>
+
+                <!-- Waveform -->
+                <div class="card mb-3 fade-in">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-wave-square me-2"></i>Live Audio</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="waveform-container" id="waveform-container">
+                            <canvas id="waveform-canvas"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mic + Controls -->
+                <div class="text-center mb-4 fade-in">
+                    <button class="mic-btn" id="mic-btn" onclick="toggleRecording()">
+                        <i class="fas fa-microphone" id="mic-icon"></i>
+                    </button>
+                    <p class="mt-2" style="color: var(--text-secondary); font-size:0.9em;" id="mic-label">
+                        Tap to start listening
+                    </p>
+                </div>
+
+                <!-- Text Output -->
+                <div class="card mb-3 fade-in">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-closed-captioning me-2"></i>Recognized Text</h5>
+                        <div class="text-controls">
+                            <button onclick="changeTextSize(-2)" title="Decrease text">A-</button>
+                            <button onclick="changeTextSize(2)" title="Increase text">A+</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="speech-text-display" id="speech-output">
+                            <span style="color: var(--text-muted);">Your recognized speech will appear here...</span>
+                        </div>
+
+                        <div class="d-flex gap-2 mt-3 flex-wrap">
+                            <button class="btn" style="background: var(--gradient-warm); color:white;"
+                                onclick="clearText()">
+                                <i class="fas fa-eraser me-1"></i> Clear
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="copyText()">
+                                <i class="fas fa-copy me-1"></i> Copy
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Language Translator -->
+                <div class="card mb-3 fade-in">
+                    <div class="card-header" style="background: var(--gradient-primary);">
+                        <h5 class="mb-0" style="color:white;"><i class="fas fa-language me-2"></i>Translate</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex gap-2 mb-3 flex-wrap align-items-center">
+                            <span class="language-badge"><i class="fas fa-globe"></i> English</span>
+                            <i class="fas fa-arrow-right" style="color: var(--text-muted);"></i>
+                            <select class="form-select" id="target-lang" style="max-width: 200px;">
+                                <option value="ta">Tamil (தமிழ்)</option>
+                                <option value="hi">Hindi (हिन्दी)</option>
+                            </select>
+                            <button class="btn btn-primary" onclick="translateText()">
+                                <i class="fas fa-language me-1"></i> Translate
+                            </button>
+                        </div>
+                        <div class="transcript-box" id="translated-output">
+                            <span style="color: var(--text-muted);">Translation will appear here...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Speech History -->
+                <div class="card fade-in">
+                    <div class="card-header d-flex justify-content-between align-items-center"
+                        style="background: var(--gradient-accent);">
+                        <h5 class="mb-0"><i class="fas fa-history me-2"></i>Speech History</h5>
+                        <button class="btn btn-sm"
+                            style="background:rgba(255,255,255,0.2);color:white;border:1px solid rgba(255,255,255,0.3);"
+                            onclick="downloadHistory()">
+                            <i class="fas fa-download me-1"></i>Download
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="speech-history" style="max-height:200px; overflow-y:auto;">
+                            <p style="color:var(--text-muted); font-size:0.9em;">
+                                <i class="fas fa-info-circle me-1"></i>Your speech recordings will be logged here with
+                                timestamps.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center py-3 mt-4" style="color: var(--text-muted); font-size:0.85em;">
+        <i class="fas fa-heart" style="color:#ef4444;"></i> SignBridge — Made for the deaf & hearing-impaired community
+    </footer>
+
+    <script>
+
+        // ── Speech Recognition ──
+        let recognition = null;
+        let isRecording = false;
+        let fullTranscript = '';
+        let audioContext, analyser, dataArray, animFrame;
+
+        // Check browser support
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            document.getElementById('speech-output').innerHTML =
+                '<span style="color:#dc2626;">⚠️ Your browser does not support speech recognition. Please use Chrome or Edge.</span>';
+        }
+
+        function toggleRecording() {
+            if (isRecording) stopRecording();
+            else startRecording();
+        }
+
+        function startRecording() {
+            if (!SpeechRecognition) return;
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = (event) => {
+                let interim = '';
+                let final = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        final += event.results[i][0].transcript + ' ';
+                    } else {
+                        interim += event.results[i][0].transcript;
+                    }
+                }
+                if (final) {
+                    fullTranscript += final;
+                    addToHistory(final);
+                }
+                const display = document.getElementById('speech-output');
+                display.innerHTML = fullTranscript +
+                    (interim ? '<span style="color:var(--text-muted);">' + interim + '</span>' : '');
+                display.classList.add('listening');
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Recognition error:', event.error);
+                if (event.error !== 'no-speech') stopRecording();
+            };
+
+            recognition.onend = () => {
+                // Auto-restart if still recording
+                if (isRecording) {
+                    try { recognition.start(); } catch (e) { }
+                }
+            };
+
+            recognition.start();
+            isRecording = true;
+
+            // UI updates
+            document.getElementById('mic-btn').classList.add('recording');
+            document.getElementById('mic-icon').className = 'fas fa-stop';
+            document.getElementById('mic-label').textContent = 'Listening... Tap to stop';
+            document.getElementById('waveform-container').classList.add('recording');
+
+            // Start waveform
+            startWaveform();
+        }
+
+        function stopRecording() {
+            if (recognition) recognition.stop();
+            isRecording = false;
+
+            document.getElementById('mic-btn').classList.remove('recording');
+            document.getElementById('mic-icon').className = 'fas fa-microphone';
+            document.getElementById('mic-label').textContent = 'Tap to start listening';
+            document.getElementById('waveform-container').classList.remove('recording');
+            document.getElementById('speech-output').classList.remove('listening');
+
+            stopWaveform();
+        }
+
+        function clearText() {
+            fullTranscript = '';
+            document.getElementById('speech-output').innerHTML =
+                '<span style="color: var(--text-muted);">Your recognized speech will appear here...</span>';
+        }
+
+        function copyText() {
+            if (fullTranscript.trim()) {
+                navigator.clipboard.writeText(fullTranscript.trim());
+                const btn = event.target.closest('.btn');
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check me-1"></i> Copied!';
+                setTimeout(() => btn.innerHTML = orig, 1500);
+            }
+        }
+
+        function changeTextSize(delta) {
+            const el = document.getElementById('speech-output');
+            const current = parseFloat(getComputedStyle(el).fontSize);
+            el.style.fontSize = Math.max(14, Math.min(40, current + delta)) + 'px';
+        }
+
+        // ── Waveform Animation ──
+        function startWaveform() {
+            navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                drawWaveform();
+            }).catch(err => console.error('Mic access denied:', err));
+        }
+
+        function drawWaveform() {
+            const canvas = document.getElementById('waveform-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = canvas.offsetWidth * 2;
+            canvas.height = canvas.offsetHeight * 2;
+            ctx.scale(2, 2);
+            const W = canvas.offsetWidth;
+            const H = canvas.offsetHeight;
+
+            function draw() {
+                animFrame = requestAnimationFrame(draw);
+                analyser.getByteFrequencyData(dataArray);
+
+                // Clear
+                ctx.clearRect(0, 0, W, H);
+
+                // Draw bars
+                const barCount = 64;
+                const barWidth = W / barCount - 2;
+                const isLight = document.documentElement.getAttribute('data-theme') !== 'dark';
+
+                for (let i = 0; i < barCount; i++) {
+                    const val = dataArray[i] / 255;
+                    const barH = val * H * 0.85;
+                    const x = i * (barWidth + 2);
+                    const y = (H - barH) / 2;
+
+                    const gradient = ctx.createLinearGradient(x, y, x, y + barH);
+                    gradient.addColorStop(0, '#42c498');
+                    gradient.addColorStop(1, '#ff7f50');
+
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, barWidth, barH, 3);
+                    ctx.fill();
+                }
+            }
+            draw();
+        }
+
+        function stopWaveform() {
+            if (animFrame) cancelAnimationFrame(animFrame);
+            if (audioContext) audioContext.close();
+
+            // Draw flat line
+            const canvas = document.getElementById('waveform-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // ── Speech History ──
+        const speechHistory = [];
+
+        function addToHistory(text) {
+            if (!text.trim()) return;
+            const time = new Date().toLocaleTimeString();
+            speechHistory.push({ time, text: text.trim() });
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const container = document.getElementById('speech-history');
+            if (!speechHistory.length) return;
+            container.innerHTML = speechHistory.map((h, i) =>
+                `<div style="padding:6px 0; border-bottom:1px solid var(--border,#222); font-size:0.9em;">
+                    <span style="color:var(--text-muted);">${h.time}</span>
+                    <span style="color:var(--text-primary); margin-left:10px;">${h.text}</span>
+                </div>`
+            ).join('');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function downloadHistory() {
+            if (!speechHistory.length) { alert('No speech history to download.'); return; }
+            const text = speechHistory.map(h => `[${h.time}] ${h.text}`).join('\n');
+            const blob = new Blob([text], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'speech_history_' + new Date().toISOString().slice(0, 10) + '.txt';
+            a.click();
+        }
+
+        // ── Language Translation ──
+        async function translateText() {
+            const text = fullTranscript.trim();
+            const lang = document.getElementById('target-lang').value;
+            const output = document.getElementById('translated-output');
+
+            if (!text) {
+                output.innerHTML = '<span style="color:var(--accent);">No text to translate. Record speech first.</span>';
+                return;
+            }
+
+            output.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Translating...';
+
+            try {
+                const r = await fetch('/api/translate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text, lang: lang })
+                });
+                const data = await r.json();
+                if (data.success) {
+                    const langName = lang === 'ta' ? 'Tamil' : 'Hindi';
+                    output.innerHTML = `<div style="font-size: var(--text-lg); margin-bottom: 8px;">${data.translated}</div><span class="language-badge"><i class="fas fa-check-circle" style="color:var(--primary);"></i> ${langName}</span>`;
+                } else {
+                    output.innerHTML = `<span style="color:var(--accent);"><i class="fas fa-exclamation-triangle me-1"></i> ${data.error}</span>`;
+                }
+            } catch (e) {
+                output.innerHTML = '<span style="color:var(--accent);">Translation failed. Check your internet connection.</span>';
+            }
+        }
+    </script>
+</body>
+
+</html>

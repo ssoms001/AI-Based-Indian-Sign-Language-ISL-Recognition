@@ -3,7 +3,16 @@ CNN Model Training Script for ISL Gesture Recognition
 Trains a Convolutional Neural Network on gesture landmark data
 """
 import os
+import sys
 import numpy as np
+
+# Fix Windows console encoding for emoji characters
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
@@ -251,11 +260,14 @@ class CNNTrainer:
         y_pred_classes = np.argmax(y_pred, axis=1)
         y_true_classes = np.argmax(self.y_test, axis=1)
         
-        # Classification report
+        # Classification report - use only labels present in test set
         class_names = self.label_encoder.classes_
+        unique_labels = sorted(set(y_true_classes) | set(y_pred_classes))
+        present_names = [class_names[i] for i in unique_labels if i < len(class_names)]
         report = classification_report(
             y_true_classes, y_pred_classes,
-            target_names=class_names,
+            labels=unique_labels,
+            target_names=present_names,
             output_dict=True
         )
         
@@ -415,7 +427,7 @@ class CNNTrainer:
         y = np.random.choice(gesture_classes, size=num_samples)
         
         # Create DataFrame
-        columns = [f'landmark_{i}_{coord}' for i in range(21) for coord in ['x', 'y', 'z']]
+        columns = [f'landmark_{i}' for i in range(63)]  # landmark_0 to landmark_62
         columns.append('gesture')
         
         data = np.column_stack([X, y])

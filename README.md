@@ -5,28 +5,44 @@ An AI-powered real-time gesture recognition system that converts Indian Sign Lan
 ## 🚀 Key Features
 
 - **Real-time Recognition**: Live ISL gesture detection using webcam and MediaPipe hand tracking
-- **Comprehensive Support**: Recognizes alphabets (A-Z) and numbers (0-9) with dual-hand support
+- **59-Class Model**: Recognizes letters (A-Z), numbers (0-9), and 23 common words (96.58% validation accuracy)
 - **Text-to-Speech**: Multiple TTS engines (pyttsx3, gTTS) for audio output
-- **NLP Processing**: Context-aware sentence formation and word suggestions
-- **Web Interface**: Modern dashboard with live video feed and real-time feedback
+- **NLP Processing**: Context-aware sentence formation and AI word suggestions
+- **Web Interface**: Modern dashboard with live video feed, dark/light themes, and real-time feedback
 - **Educational Games**: Interactive alphabet and numbers learning games
+- **Data Collection**: Built-in webcam capture tool to expand the training dataset
 - **RESTful API**: Endpoints for integration and custom applications
+
+### Supported Gestures
+
+| Category | Classes |
+|----------|--------|
+| Letters | A-Z (26) |
+| Numbers | 0-9 (10) |
+| Words | AFRAID, AGREE, ASSISTANCE, BAD, BECOME, COLLEGE, DOCTOR, FROM, HELLO, LOVE, NO, PAIN, PRAY, SECONDARY, SKIN, SMALL, SPACE, SPECIFIC, STAND, TODAY, WARN, WHICH, WORK, YES, YOU |
 
 ## 🏗️ Project Structure
 
 ```
-isl-gesture-recognition/
+AI-Based-Indian-Sign-Language-ISL-Recognition/
 ├── app.py                 # Main Flask application
 ├── run.py                 # Application launcher
-├── config.py              # Configuration settings
+├── config.py              # Configuration (59 gesture classes)
 ├── requirements.txt       # Python dependencies
-├── src/                   # Source code (models, utils, preprocessing)
-├── static/                # Web assets (CSS, JS, images)
-├── templates/             # HTML templates
-├── data/                  # Datasets and processed data
-├── models/                # Trained models and checkpoints
-├── logs/                  # Performance logs
-└── tests/                 # Test suites
+├── merge_datasets.py      # Dataset merging utility
+├── src/
+│   ├── models/            # CNN training (train_cnn.py)
+│   ├── preprocessing/     # MediaPipe landmark extraction
+│   └── utils/             # TTS, NLP, gesture recognition
+├── static/                # CSS, JS, gesture reference images
+├── templates/             # HTML (index, login, learn, collect, etc.)
+├── data/
+│   ├── raw/gestures/      # 90K merged training images
+│   └── processed/         # 330K landmark samples (CSV)
+├── models/
+│   ├── trained/           # Production model (cnn_model.h5)
+│   └── checkpoints/       # Training checkpoints
+└── datasets/              # Raw downloaded datasets (~11GB, gitignored)
 ```
 
 ## 🔧 Installation
@@ -96,7 +112,28 @@ isl-gesture-recognition/
 
 ## 🧠 Model Training
 
-Train custom models using `src/models/train_cnn.py` with prepared datasets in `data/`.
+The current model was trained on **330,828 MediaPipe landmark samples** from 10 merged datasets.
+
+| Metric | Value |
+|--------|-------|
+| Validation Accuracy | **96.58%** |
+| Top-K Accuracy | 99.22% |
+| Classes | 59 |
+| Training Time | ~35 min |
+
+### Retraining
+
+```bash
+# 1. Preprocess images → landmarks
+python -m src.preprocessing.preprocess_data
+
+# 2. Train CNN
+python -m src.models.train_cnn
+```
+
+### Collecting More Data
+
+Visit `http://localhost:5000/collect` to capture gesture images via webcam, then retrain.
 
 ## 📄 License
 

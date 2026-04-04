@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SignBridge — Statistics Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    {% include 'partials/_head.html' %}
+</head>
+
+<body>
+    {% include 'partials/_navbar.html' %}
+
+    <div class="container mt-4 mb-5" id="dashboard-content">
+        <!-- Header -->
+        <div class="text-center mb-4 fade-in">
+            <h2 style="font-weight:700; color: var(--text-primary);">
+                <i class="fas fa-chart-pie me-2" style="color:var(--primary);"></i>
+                Model Statistics
+            </h2>
+            <p style="color: var(--text-secondary);">
+                AI model performance and training data overview
+            </p>
+            <button class="btn btn-sm" onclick="generateReport()"
+                style="background:var(--gradient-primary); color:white; border:none; padding:8px 20px; border-radius:25px;">
+                <i class="fas fa-file-pdf me-2"></i>Generate Report
+            </button>
+        </div>
+
+        <!-- Main Stats -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3 col-6 fade-in">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-bullseye"></i></div>
+                    <div class="stat-value" data-target="99.94">0</div>
+                    <div class="stat-label">Test Accuracy %</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 fade-in">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-hand-paper"></i></div>
+                    <div class="stat-value" data-target="81">0</div>
+                    <div class="stat-label">Gesture Classes</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 fade-in">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-images"></i></div>
+                    <div class="stat-value" data-target="82500">0</div>
+                    <div class="stat-label">Reference Frames</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6 fade-in">
+                <div class="stat-card">
+                    <div class="stat-icon"><i class="fas fa-database"></i></div>
+                    <div class="stat-value" data-target="393328">0</div>
+                    <div class="stat-label">Total Samples</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Details Row -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-6 fade-in">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-brain me-2"></i>Model Architecture</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table mb-0" style="color: var(--text-primary);">
+                            <tbody>
+                                <tr>
+                                    <td style="font-weight:600;">Type</td>
+                                    <td>Dense Neural Network (DNN)</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Input Features</td>
+                                    <td>63 (21 landmarks × 3 coordinates)</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Layers</td>
+                                    <td>Dense → 256 → 128 → 64 → 32 → 81</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Parameters</td>
+                                    <td>62,563</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Regularization</td>
+                                    <td>BatchNorm + Dropout</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Optimizer</td>
+                                    <td>Adam (lr=0.001)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 fade-in">
+                <div class="card h-100">
+                    <div class="card-header" style="background: var(--gradient-accent);">
+                        <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Training Details</h5>
+                    </div>
+                    <div class="card-body">
+                        <table class="table mb-0" style="color: var(--text-primary);">
+                            <tbody>
+                                <tr>
+                                    <td style="font-weight:600;">Total Epochs</td>
+                                    <td>100 (LR reduced at 70)</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Best Epoch</td>
+                                    <td>87</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Training Time</td>
+                                    <td>~30 minutes</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Train Accuracy</td>
+                                    <td>98.42%</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Val Accuracy</td>
+                                    <td>97.10%</td>
+                                </tr>
+                                <tr>
+                                    <td style="font-weight:600;">Top-K Accuracy</td>
+                                    <td>99.85%</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Classes & Detection -->
+        <div class="row g-3 mb-4">
+            <div class="col-12 fade-in">
+                <div class="card">
+                    <div class="card-header" style="background: linear-gradient(135deg, #8b5cf6, #a78bfa);">
+                        <h5 class="mb-0"><i class="fas fa-th me-2"></i>Supported Gestures (A-Z, 0-9, 45 Words)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="gesture-scroll-row" id="gesture-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Technology Stack -->
+        <div class="row g-3">
+            <div class="col-12 fade-in">
+                <div class="card">
+                    <div class="card-header" style="background: var(--gradient-warm);">
+                        <h5 class="mb-0"><i class="fas fa-cogs me-2"></i>Technology Stack</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3" id="tech-stack">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center py-3" style="color: var(--text-muted); font-size:0.85em;">
+        <i class="fas fa-heart" style="color:#ef4444;"></i> SignBridge — Made for the deaf & hearing-impaired community
+    </footer>
+
+    <script>
+
+        // Animated counters
+        function animateCounters() {
+            document.querySelectorAll('.stat-value[data-target]').forEach(el => {
+                const target = parseFloat(el.dataset.target);
+                const isFloat = target % 1 !== 0;
+                const duration = 1500;
+                const start = performance.now();
+
+                function update(now) {
+                    const elapsed = now - start;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const ease = 1 - Math.pow(1 - progress, 3);
+                    const current = target * ease;
+
+                    if (isFloat) {
+                        el.textContent = current.toFixed(2);
+                    } else {
+                        el.textContent = Math.floor(current).toLocaleString();
+                    }
+
+                    if (progress < 1) requestAnimationFrame(update);
+                    else el.textContent = isFloat ? target.toFixed(2) : target.toLocaleString();
+                }
+                requestAnimationFrame(update);
+            });
+        }
+
+        // Gesture cards with images (letters + numbers + common words)
+        const letters = 'A B C D E F G H I J K L M N O P Q R S T U V W X Y Z 0 1 2 3 4 5 6 7 8 9'.split(' ');
+        const words = ['HELLO', 'YES', 'NO', 'LOVE', 'SPACE', 'DOCTOR', 'COLLEGE', 'AFRAID', 'AGREE', 'ASSISTANCE', 'BAD', 'BECOME', 'FROM', 'PAIN', 'PRAY', 'SECONDARY', 'SKIN', 'SMALL', 'SPECIFIC', 'STAND', 'TODAY', 'WARN', 'WHICH', 'WORK', 'YOU'];
+        const allGestures = [...letters, ...words];
+        const container = document.getElementById('gesture-list');
+        allGestures.forEach(g => {
+            const card = document.createElement('div');
+            card.className = 'gesture-card';
+            card.style.minWidth = g.length > 1 ? 'auto' : '64px';
+            card.innerHTML = `<img src="/static/gestures/${g}.png" alt="${g}" onerror="this.style.display='none'"><span style="font-size:${g.length > 2 ? '0.65em' : '0.85em'}">${g}</span>`;
+            container.appendChild(card);
+        });
+
+        // Technology Stack cards
+        const techStack = [
+            { name: 'Python', icon: 'fab fa-python', color: '#3776AB', desc: 'Core Backend' },
+            { name: 'TensorFlow', icon: 'fas fa-brain', color: '#FF6F00', desc: 'Deep Learning' },
+            { name: 'MediaPipe', icon: 'fas fa-hand-paper', color: '#42c498', desc: 'Hand Detection' },
+            { name: 'Flask', icon: 'fas fa-server', color: '#000000', desc: 'Web Framework' },
+            { name: 'OpenCV', icon: 'fas fa-camera', color: '#5C3EE8', desc: 'Computer Vision' },
+            { name: 'Web Speech API', icon: 'fas fa-microphone', color: '#4285F4', desc: 'Speech Recognition' },
+            { name: 'Bootstrap 5', icon: 'fab fa-bootstrap', color: '#7952B3', desc: 'UI Framework' },
+            { name: 'spaCy NLP', icon: 'fas fa-language', color: '#09A3D5', desc: 'Text Processing' },
+            { name: 'pyttsx3', icon: 'fas fa-volume-up', color: '#ff7f50', desc: 'Text-to-Speech' },
+            { name: 'PWA', icon: 'fas fa-mobile-alt', color: '#5A0FC8', desc: 'Installable App' }
+        ];
+        const techContainer = document.getElementById('tech-stack');
+        techStack.forEach(t => {
+            const col = document.createElement('div');
+            col.className = 'col-6 col-md-3 col-lg-2';
+            col.innerHTML = `
+                <div class="tech-card text-center p-3" style="border-radius:var(--radius-md); border:1px solid var(--border); background:var(--bg-card); transition:all 0.2s;">
+                    <i class="${t.icon}" style="font-size:1.8em; color:${t.color}; margin-bottom:8px; display:block;"></i>
+                    <div style="font-weight:700; font-size:0.9em; color:var(--text-primary);">${t.name}</div>
+                    <div style="font-size:0.75em; color:var(--text-muted);">${t.desc}</div>
+                </div>
+            `;
+            techContainer.appendChild(col);
+        });
+
+        // Start animations after load
+        window.addEventListener('load', () => {
+            setTimeout(animateCounters, 300);
+        });
+
+        // ── PDF Report Generator ──
+        function generateReport() {
+            const win = window.open('', '_blank');
+            const date = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+            win.document.write(`
+<!DOCTYPE html><html><head><title>SignBridge — Project Report</title>
+<style>
+  body { font-family: 'Segoe UI', Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1a1a2e; line-height: 1.7; }
+  h1 { text-align:center; color:#2fa87e; border-bottom:3px solid #2fa87e; padding-bottom:12px; }
+  h2 { color:#333; border-left:4px solid #42c498; padding-left:12px; margin-top:30px; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; }
+  th, td { padding:10px 14px; border:1px solid #ddd; text-align:left; }
+  th { background:#f4f5f7; font-weight:600; }
+  .header-info { text-align:center; color:#666; margin-bottom:30px; }
+  .stat-box { display:inline-block; text-align:center; padding:16px 24px; margin:8px; border:2px solid #42c498; border-radius:10px; }
+  .stat-box .val { font-size:2em; font-weight:800; color:#42c498; }
+  .stat-box .lbl { font-size:0.85em; color:#666; }
+  .footer { text-align:center; margin-top:40px; padding-top:20px; border-top:2px solid #eee; color:#888; font-size:0.85em; }
+  @media print { body { margin: 0; } }
+</style></head><body>
+<h1>🤟 SignBridge — AI-Based ISL Recognition</h1>
+<div class="header-info">
+  <p><strong>Project Report</strong></p>
+  <p>Developed by <strong>S. Sunther</strong></p>
+  <p>Date: ${date}</p>
+</div>
+
+<h2>📋 About the Project</h2>
+<p>SignBridge is an AI-powered application designed to bridge the communication gap between deaf-mute and hearing communities. It uses real-time hand gesture recognition to translate Indian Sign Language (ISL) into text and speech, enabling seamless two-way communication.</p>
+<p>The system supports <strong>59 gesture classes</strong> including A-Z alphabets, 0-9 numbers, and 25 common ISL words. It also provides speech-to-text functionality for hearing-impaired users to read what others are saying.</p>
+
+<h2>📊 Model Performance</h2>
+<div style="text-align:center; margin:20px 0;">
+  <div class="stat-box"><div class="val">99.94%</div><div class="lbl">Test Accuracy</div></div>
+  <div class="stat-box"><div class="val">81</div><div class="lbl">Gesture Classes</div></div>
+  <div class="stat-box"><div class="val">42,745</div><div class="lbl">Training Images</div></div>
+  <div class="stat-box"><div class="val">172,845</div><div class="lbl">Total Samples</div></div>
+</div>
+
+<h2>🧠 Model Architecture</h2>
+<table>
+  <tr><th>Parameter</th><th>Value</th></tr>
+  <tr><td>Type</td><td>Dense Neural Network (DNN)</td></tr>
+  <tr><td>Input Features</td><td>63 (21 landmarks × 3 coordinates)</td></tr>
+  <tr><td>Layers</td><td>Dense → 256 → 128 → 64 → 32 → 81</td></tr>
+  <tr><td>Total Parameters</td><td>62,563</td></tr>
+  <tr><td>Regularization</td><td>BatchNorm + Dropout</td></tr>
+  <tr><td>Optimizer</td><td>Adam (lr=0.001)</td></tr>
+</table>
+
+<h2>📈 Training Details</h2>
+<table>
+  <tr><th>Metric</th><th>Value</th></tr>
+  <tr><td>Total Epochs</td><td>64 (early stopped)</td></tr>
+  <tr><td>Best Epoch</td><td>49</td></tr>
+  <tr><td>Training Time</td><td>~9 minutes</td></tr>
+  <tr><td>Train Accuracy</td><td>99.76%</td></tr>
+  <tr><td>Validation Accuracy</td><td>99.90%</td></tr>
+  <tr><td>Top-K Accuracy</td><td>100%</td></tr>
+</table>
+
+<h2>🤟 Supported Gestures</h2>
+<p><strong>Letters:</strong> A B C D E F G H I J K L M N O P Q R S T U V W X Y Z</p>
+<p><strong>Numbers:</strong> 0 1 2 3 4 5 6 7 8 9</p>
+<p><strong>Words:</strong> HELLO, YES, NO, LOVE, SPACE, DOCTOR, COLLEGE, AFRAID, ASSISTANCE, PAIN, PRAY, SECONDARY, SMALL, TODAY, WARN, WHICH</p>
+
+<h2>🔧 Technology Stack</h2>
+<table>
+  <tr><th>Technology</th><th>Purpose</th></tr>
+  <tr><td>Python</td><td>Core Backend Language</td></tr>
+  <tr><td>TensorFlow / Keras</td><td>Deep Learning Model</td></tr>
+  <tr><td>MediaPipe</td><td>Hand Landmark Detection</td></tr>
+  <tr><td>Flask</td><td>Web Application Framework</td></tr>
+  <tr><td>OpenCV</td><td>Computer Vision</td></tr>
+  <tr><td>Web Speech API</td><td>Speech Recognition</td></tr>
+  <tr><td>pyttsx3</td><td>Text-to-Speech</td></tr>
+  <tr><td>spaCy NLP</td><td>Natural Language Processing</td></tr>
+  <tr><td>Bootstrap 5</td><td>Responsive UI Framework</td></tr>
+  <tr><td>PWA</td><td>Progressive Web App (Installable)</td></tr>
+</table>
+
+<h2>✨ Key Features</h2>
+<ul>
+  <li><strong>Real-time ISL Recognition</strong> — Camera captures hand signs and translates to text/speech</li>
+  <li><strong>Speech to Text</strong> — Converts spoken words to text for deaf users with waveform visualization</li>
+  <li><strong>Translation</strong> — Translates recognized text to Tamil and Hindi</li>
+  <li><strong>Accuracy Testing</strong> — Typing-test style ISL accuracy validation</li>
+  <li><strong>Learning Games</strong> — Interactive alphabet and number signing games</li>
+  <li><strong>PWA Support</strong> — Installable as a mobile app with offline capabilities</li>
+  <li><strong>Dark/Light Theme</strong> — Accessible design for all users</li>
+</ul>
+
+<div class="footer">
+  <p>SignBridge © ${new Date().getFullYear()} — Made with ❤️ for the deaf & hearing-impaired community</p>
+  <p>Developed by S. Sunther</p>
+</div>
+</body></html>`);
+            win.document.close();
+            setTimeout(() => win.print(), 500);
+        }
+    </script>
+</body>
+
+</html>
